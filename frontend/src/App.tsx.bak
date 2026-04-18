@@ -1,0 +1,214 @@
+import { useState } from 'react'
+import type { AnalysisResponse, EmailInput, StudentProfile } from '@/lib/types'
+import { analyzeEmails, getSampleEmails } from '@/lib/api'
+import ProfileForm from '@/components/ProfileForm'
+import EmailInputComponent from '@/components/EmailInput'
+import OpportunityCard from '@/components/OpportunityCard'
+import TodayQueue from '@/components/TodayQueue'
+import GapAnalysis from '@/components/GapAnalysis'
+import FilteredEmails from '@/components/FilteredEmails'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Toaster, toast } from 'sonner'
+import { Inbox, RotateCcw, CheckCircle, AlertCircle, Clock } from 'lucide-react'
+
+type Step = 'profile' | 'emails' | 'results'
+
+const PAGE = {
+  initial:  { opacity: 0, y: 20 },
+  animate:  { opacity: 1, y: 0 },
+  exit:     { opacity: 0, y: -12 },
+  transition: { duration: 0.25 },
+} as const
+
+const STEPS = [
+  { id: 'profile', label: 'Your Profile' },
+  { id: 'emails',  label: 'Your Emails'  },
+  { id: 'results', label: 'Results'       },
+] as const
+
+export default function App() {
+  const [step, setStep]       = useState<Step>('profile')
+  const [profile, setProfile] = useState<StudentProfile | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [results, setResults] = useState<AnalysisResponse | null>(null)
+
+  const handleProfileSubmit = (p: StudentProfile) => { setProfile(p); setStep('emails') }
+
+  const handleAnalyze = async (emails: EmailInput[]) => {
+    if (!profile) return
+    setLoading(true)
+    try {
+      const data = await analyzeEmails(profile, emails)
+      setResults(data)
+      setStep('results')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Analysis failed.'
+      toast.error(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleReset = () => { setStep('profile'); setProfile(null); setResults(null) }
+
+  const stepIndex = STEPS.findIndex(s => s.id === step)
+
+  return (
+    <div className="min-h-screen bg-[#F8F9FC]">
+      <Toaster position="top-center" richColors />
+
+      {/* ── Header ─────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-sm shadow-indigo-300">
+              <Inbox className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-slate-900 tracking-tight leading-none">
+                Opportunity Inbox Copilot
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">AI-powered email opportunity ranker</p>
+            </div>
+          </div>
+          {step !== 'profile' && (
+            <button onClick={handleReset}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition-colors px-3 py-1.5 rounded-lg hover:bg-slate-100">
+              <RotateCcw className="h-3.5 w-3.5" /> Start Over
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* ── Step Indicator ─────────────────────────────── */}
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 pb-2">
+        <div className="flex items-center gap-2">
+          {STEPS.map((s, i) => {
+            const done    = stepIndex > i
+            const current = stepIndex === i
+            return (
+              <div key={s.id} className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300
+                    ${done    ? 'bg-indigo-600 text-white'
+                    : current ? 'bg-indigo-600 text-white ring-4 ring-indigo-100'
+                               : 'bg-slate-200 text-slate-500'}`}>
+                    {done ? <CheckCircle className="h-4 w-4" /> : i + 1}
+                  </div>
+                  <span className={`text-xs font-medium hidden sm:block transition-colors
+                    ${current ? 'text-slate-900' : done ? 'text-indigo-600' : 'text-slate-400'}`}>
+                    {s.label}
+                  </span>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className={`h-px w-8 sm:w-16 transition-all duration-500
+                    ${done ? 'bg-indigo-400' : 'bg-slate-200'}`} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Main Content ────────────────────────────────── */}
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+        <AnimatePresence mode="wait">
+
+          {/* Step 1 — Profile */}
+          {step === 'profile' && (
+            <motion.div key="profile" {...PAGE}>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+                <div className="mb-7">
+                  <h2 className="text-xl font-semibold text-slate-900">Tell us about yourself</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Upload your resume to auto-fill, or complete the form manually. Your profile drives the AI ranking.
+                  </p>
+                </div>
+                <ProfileForm onSubmit={handleProfileSubmit} />
+              </div>
+            </motion.div>
+          )}
+
+          {/* Step 2 — Emails */}
+          {step === 'emails' && (
+            <motion.div key="emails" {...PAGE}>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
+                <div className="mb-7">
+                  <h2 className="text-xl font-semibold text-slate-900">Add your opportunity emails</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Paste up to 15 emails. Click <strong>Load Demo Inbox</strong> to see a full example instantly.
+                  </p>
+                </div>
+                <EmailInputComponent onAnalyze={handleAnalyze} onLoadSamples={getSampleEmails} loading={loading} />
+              </div>
+            </motion.div>
+          )}
+
+          {/* Step 3 — Results */}
+          {step === 'results' && results && (
+            <motion.div key="results" {...PAGE} className="space-y-5">
+
+              {/* Summary banner */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+                <h2 className="text-base font-semibold text-slate-900 mb-4">Analysis Summary</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <StatCard
+                    icon={Inbox} value={results.total_emails}
+                    label="Emails Scanned" color="text-slate-600" bg="bg-slate-50" />
+                  <StatCard
+                    icon={CheckCircle} value={results.opportunities_found}
+                    label="Opportunities" color="text-indigo-600" bg="bg-indigo-50" />
+                  <StatCard
+                    icon={AlertCircle}
+                    value={results.ranked_opportunities.filter(o => o.urgency_level === 'critical').length}
+                    label="Need Urgent Action" color="text-red-600" bg="bg-red-50" />
+                  <StatCard
+                    icon={Clock}
+                    value={results.ranked_opportunities.filter(o => o.is_eligible).length}
+                    label="You Qualify For" color="text-emerald-600" bg="bg-emerald-50" />
+                </div>
+              </div>
+
+              {/* Today queue */}
+              <TodayQueue items={results.today_queue} />
+
+              {/* Ranked opportunities */}
+              {results.ranked_opportunities.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-base font-semibold text-slate-900">Ranked Opportunities</h2>
+                    <span className="text-xs text-slate-400">Sorted by priority score</span>
+                  </div>
+                  <div className="space-y-4">
+                    {results.ranked_opportunities.map((opp, i) => (
+                      <OpportunityCard key={opp.email_index} opp={opp} index={i} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gap analysis */}
+              <GapAnalysis items={results.gap_analysis} />
+
+              {/* Filtered */}
+              <FilteredEmails emails={results.filtered_out} />
+
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
+  )
+}
+
+function StatCard({
+  icon: Icon, value, label, color, bg,
+}: { icon: React.ElementType; value: number; label: string; color: string; bg: string }) {
+  return (
+    <div className={`${bg} rounded-xl p-4 flex flex-col gap-2`}>
+      <Icon className={`h-4 w-4 ${color}`} />
+      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+      <p className="text-xs text-slate-500 leading-tight">{label}</p>
+    </div>
+  )
+}
